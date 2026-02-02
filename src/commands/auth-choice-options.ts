@@ -21,7 +21,8 @@ export type AuthChoiceGroupId =
   | "minimax"
   | "synthetic"
   | "venice"
-  | "qwen";
+  | "qwen"
+  | "ollama";
 
 export type AuthChoiceGroup = {
   value: AuthChoiceGroupId;
@@ -120,6 +121,12 @@ const AUTH_CHOICE_GROUP_DEFS: {
     hint: "Privacy-focused (uncensored models)",
     choices: ["venice-api-key"],
   },
+  {
+    value: "ollama",
+    label: "Ollama (local)",
+    hint: "OpenAI-compatible local endpoint",
+    choices: ["ollama"],
+  },
 ];
 
 export function buildAuthChoiceOptions(params: {
@@ -153,6 +160,11 @@ export function buildAuthChoiceOptions(params: {
     value: "venice-api-key",
     label: "Venice AI API key",
     hint: "Privacy-focused inference (uncensored models)",
+  });
+  options.push({
+    value: "ollama",
+    label: "Ollama (local) base URL",
+    hint: "http://127.0.0.1:11434/v1",
   });
   options.push({
     value: "github-copilot",

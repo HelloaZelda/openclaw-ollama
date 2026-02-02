@@ -91,13 +91,38 @@ interface OllamaTagsResponse {
   models: OllamaModel[];
 }
 
-async function discoverOllamaModels(): Promise<ModelDefinitionConfig[]> {
+function resolveOllamaApiBaseUrl(baseUrl?: string): string {
+  const raw = baseUrl?.trim();
+  if (!raw) {
+    return OLLAMA_API_BASE_URL;
+  }
+  try {
+    const url = new URL(raw);
+    const trimmedPath = url.pathname.replace(/\/+$/, "");
+    if (trimmedPath.endsWith("/v1")) {
+      const nextPath = trimmedPath.slice(0, -3);
+      url.pathname = nextPath.length > 0 ? nextPath : "/";
+    } else {
+      url.pathname = trimmedPath.length > 0 ? trimmedPath : "/";
+    }
+    url.search = "";
+    url.hash = "";
+    const normalized = url.toString();
+    return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+  } catch {
+    return OLLAMA_API_BASE_URL;
+  }
+}
+
+async function discoverOllamaModels(params: {
+  apiBaseUrl: string;
+}): Promise<ModelDefinitionConfig[]> {
   // Skip Ollama discovery in test environments
   if (process.env.VITEST || process.env.NODE_ENV === "test") {
     return [];
   }
   try {
-    const response = await fetch(`${OLLAMA_API_BASE_URL}/api/tags`, {
+    const response = await fetch(`${params.apiBaseUrl}/api/tags`, {
       signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) {
@@ -385,10 +410,12 @@ async function buildVeniceProvider(): Promise<ProviderConfig> {
   };
 }
 
-async function buildOllamaProvider(): Promise<ProviderConfig> {
-  const models = await discoverOllamaModels();
+async function buildOllamaProvider(params?: { baseUrl?: string }): Promise<ProviderConfig> {
+  const baseUrl = params?.baseUrl?.trim() || OLLAMA_BASE_URL;
+  const apiBaseUrl = resolveOllamaApiBaseUrl(baseUrl);
+  const models = await discoverOllamaModels({ apiBaseUrl });
   return {
-    baseUrl: OLLAMA_BASE_URL,
+    baseUrl,
     api: "openai-completions",
     models,
   };
@@ -396,6 +423,7 @@ async function buildOllamaProvider(): Promise<ProviderConfig> {
 
 export async function resolveImplicitProviders(params: {
   agentDir: string;
+  config?: OpenClawConfig;
 }): Promise<ModelsConfig["providers"]> {
   const providers: Record<string, ProviderConfig> = {};
   const authStore = ensureAuthProfileStore(params.agentDir, {
@@ -454,11 +482,16 @@ export async function resolveImplicitProviders(params: {
   }
 
   // Ollama provider - only add if explicitly configured
+  const explicitOllama = params.config?.models?.providers?.ollama;
+  const explicitOllamaModels = explicitOllama?.models ?? [];
+  const shouldDiscoverOllama = Boolean(explicitOllama && explicitOllamaModels.length === 0);
   const ollamaKey =
     resolveEnvApiKeyVarName("ollama") ??
     resolveApiKeyFromProfiles({ provider: "ollama", store: authStore });
-  if (ollamaKey) {
-    providers.ollama = { ...(await buildOllamaProvider()), apiKey: ollamaKey };
+  if (ollamaKey || shouldDiscoverOllama) {
+    const baseUrl = explicitOllama?.baseUrl ?? OLLAMA_BASE_URL;
+    const apiKey = ollamaKey ?? explicitOllama?.apiKey ?? "ollama-local";
+    providers.ollama = { ...(await buildOllamaProvider({ baseUrl })), apiKey };
   }
 
   return providers;

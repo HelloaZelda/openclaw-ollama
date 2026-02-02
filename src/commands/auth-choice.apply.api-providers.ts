@@ -51,6 +51,53 @@ import {
 } from "./onboard-auth.js";
 import { OPENCODE_ZEN_DEFAULT_MODEL } from "./opencode-zen-model-default.js";
 
+const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
+
+type OllamaTagsResponse = {
+  models?: Array<{ name?: string }>;
+};
+
+function normalizeOllamaBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+  const withScheme =
+    trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : `http://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return withScheme;
+  }
+  const path = url.pathname.replace(/\/+$/, "");
+  if (!path.endsWith("/v1")) {
+    url.pathname = `${path || ""}/v1`;
+  } else {
+    url.pathname = path;
+  }
+  url.search = "";
+  url.hash = "";
+  const normalized = url.toString();
+  return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+}
+
+function resolveOllamaApiBaseUrl(openAiBaseUrl: string): string {
+  try {
+    const url = new URL(openAiBaseUrl);
+    const path = url.pathname.replace(/\/+$/, "");
+    if (path.endsWith("/v1")) {
+      const nextPath = path.slice(0, -3);
+      url.pathname = nextPath.length > 0 ? nextPath : "/";
+    } else {
+      url.pathname = path.length > 0 ? path : "/";
+    }
+    url.search = "";
+    url.hash = "";
+    const normalized = url.toString();
+    return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
+  } catch {
+    return openAiBaseUrl;
+  }
+}
+
 export async function applyAuthChoiceApiProviders(
   params: ApplyAuthChoiceParams,
 ): Promise<ApplyAuthChoiceResult | null> {
@@ -97,6 +144,77 @@ export async function applyAuthChoiceApiProviders(
     } else if (params.opts.tokenProvider === "opencode") {
       authChoice = "opencode-zen";
     }
+  }
+
+  if (authChoice === "ollama") {
+    const baseUrl = await params.prompter.text({
+      message: "Enter Ollama base URL (OpenAI-compatible)",
+      initialValue: DEFAULT_OLLAMA_BASE_URL,
+      validate: (value) => {
+        const candidate = normalizeOllamaBaseUrl(value);
+        try {
+          new URL(candidate);
+        } catch {
+          return "Enter a valid URL (e.g. http://127.0.0.1:11434/v1).";
+        }
+        return undefined;
+      },
+    });
+    const normalizedBaseUrl = normalizeOllamaBaseUrl(String(baseUrl));
+    let defaultModel: string | undefined;
+    try {
+      const apiBaseUrl = resolveOllamaApiBaseUrl(normalizedBaseUrl);
+      const response = await fetch(`${apiBaseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as OllamaTagsResponse;
+        const modelId = data.models?.map((model) => model.name).find(Boolean);
+        if (modelId) {
+          defaultModel = `ollama/${modelId}`;
+        }
+      }
+    } catch {}
+    nextConfig = {
+      ...nextConfig,
+      models: {
+        ...nextConfig.models,
+        providers: {
+          ...nextConfig.models?.providers,
+          ollama: {
+            baseUrl: normalizedBaseUrl,
+            apiKey: "ollama-local",
+            api: "openai-completions",
+            models: [],
+          },
+        },
+      },
+    };
+    if (defaultModel) {
+      if (params.setDefaultModel) {
+        nextConfig = {
+          ...nextConfig,
+          agents: {
+            ...nextConfig.agents,
+            defaults: {
+              ...nextConfig.agents?.defaults,
+              model: {
+                ...((nextConfig.agents?.defaults?.model as { primary?: string }) ?? {}),
+                primary: defaultModel,
+              },
+            },
+          },
+        };
+        await params.prompter.note(`Default model set to ${defaultModel}`, "Model configured");
+      } else if (params.agentId) {
+        agentModelOverride = defaultModel;
+        await params.prompter.note(
+          `Default model set to ${defaultModel} for agent "${params.agentId}".`,
+          "Model configured",
+        );
+      }
+    }
+    return { config: nextConfig, agentModelOverride };
   }
 
   if (authChoice === "openrouter-api-key") {
