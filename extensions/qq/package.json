@@ -1,0 +1,30 @@
+{
+  "name": "@openclaw/qq",
+  "version": "2026.2.4",
+  "description": "OpenClaw QQ Channels (QQ Guild) channel plugin",
+  "type": "module",
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "qq",
+      "label": "QQ Channels",
+      "selectionLabel": "QQ Channels (Official Bot)",
+      "detailLabel": "QQ Channels Bot",
+      "docsPath": "/channels/qq",
+      "docsLabel": "qq",
+      "blurb": "QQ Channels (QQ Guild) bot via Webhook (Ed25519 signed).",
+      "order": 36,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@openclaw/qq",
+      "localPath": "extensions/qq",
+      "defaultChoice": "npm"
+    }
+  }
+}
