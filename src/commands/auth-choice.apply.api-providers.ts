@@ -199,7 +199,7 @@ export async function applyAuthChoiceApiProviders(
             defaults: {
               ...nextConfig.agents?.defaults,
               model: {
-                ...((nextConfig.agents?.defaults?.model as { primary?: string }) ?? {}),
+                ...(nextConfig.agents?.defaults?.model as { primary?: string }),
                 primary: defaultModel,
               },
             },
